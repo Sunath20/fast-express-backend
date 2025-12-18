@@ -1,0 +1,3 @@
+# The Dataclass has problems with mongoose and other database mergin
+So make sure to fix it.
+Fix problems with validations , especially dynamic uniquess and nullable stuff

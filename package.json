@@ -1,0 +1,28 @@
+{
+  "name": "fast-express-backend",
+  "version": "1.1.7",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "run": "node .\\play\\dataclass\\dataclass_1.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test-cruds": "nodemon tests/basic_cruds_test.js --trace-warnings"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "argon2": "^0.40.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.3.0",
+    "mongoose": "^8.4.5",
+    "mysql": "^2.18.1",
+    "mysql2": "^3.9.7",
+    "nodemon": "^3.0.2",
+    "pg": "^8.11.5",
+    "sqlite3": "^5.1.7",
+    "uuid": "^9.0.1"
+  }
+}

@@ -339,6 +339,11 @@ class MySqlDatabase extends Database{
         return "mysql"
     }
 
+    async runQuery(query,values){
+        const response = await queryToPromise(this.connection,query,values)
+        return response;
+    }
+
 }
 
 

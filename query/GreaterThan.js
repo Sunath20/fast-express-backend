@@ -1,4 +1,4 @@
-const {DATABASE_TYPES} = require("../../databases");
+const {DATABASE_TYPES} = require("../databases");
 
 function greaterThanMongodb(fieldName,valueIndex){
     return {[fieldName]: {$gt: fieldName}};

@@ -1,62 +1,5 @@
-const { DATABASE_TYPES } = require("../../databases");
+const {Query} = require("./Query")
 const uuid = require("uuid")
-
-function tableDotField(d,field){
-    const name = (new d)().getName()
-    return name+"."+field
-}
-
-function mySqlQuery(properties){
-    let count = 0;
-    let values = []
-    let query = [];
-    for(let i = 0 ; i < properties.length;i++){
-        const functions = this[properties[i]]
-       
-        for(let j = 0 ; j < functions.length;j++){
-            const response = functions[j](DATABASE_TYPES.MYSQL,properties[i],count)
-            query.push(response.queryString)
-            values.push(response.value)
-            count++;
-        }
-
-    }
-
-    query = query.join(" and ")
-    return {query,values}
-}
-
-class Filter {
-
-
-    init(dClass,DatabaseType){
-        this.dClass = dClass;
-        this.dType = DatabaseType;
-        this.predefinedFields = ['dClass','dType','predefinedFields'];
-    }
-
-    filterToString(){
-        throw new Error("This must be Override by the subclass")
-    }
-
-
-    buildQuery(placeHolderValues,realValues) {
-        const properties = Object.keys(this).filter((key) => this.predefinedFields.indexOf(key) === -1);
-        const {query,values} = mySqlQuery.bind(this)(properties)
-        this.replacePlaceHolders(values,placeHolderValues,realValues)
-        console.log(query,values)
-    }
-
-    replacePlaceHolders(values,placeHolderValues,realValues) {
-        for (let i = 0; i < placeHolderValues.length; i++) {
-            const index = values.indexOf(placeHolderValues[i])
-            values[i] = realValues[i]
-        }
-    }
-
-
-}
-
 
 const ACTION_TYPES = {
     SELECT:"SELECT",
@@ -76,25 +19,6 @@ const LikePatterns = {
     "CONTAINS":"CONTAINS",
     "FOLLOWED_BY_ONE":"FOLLOWED_BY_ONE",
     "FOLLOWED_BY_TWO":"FOLLOWED_BY_TWO",
-}
-
-
-class Query {
-    setActionType(type){}
-    setSelectingFields(fields){}
-    setTableName(dClass){}
-    startFiltering(){}
-    endFiltering(){}
-    insert(dClass,values){}
-    orderBy(field,direction){}
-    limit(lim){}
-    skip(amount){}
-    graterThan(field,value){}
-    lessThan(field,value){}
-    setUpdateValues(values){}
-    equals(field,value){}
-    like(field,value,position){}
-    build(){}
 }
 
 
@@ -266,13 +190,8 @@ class MySQLQuery extends Query {
 
     }
 
-
 }
 
+module.exports = {MySQLQuery,LikePatterns,ACTION_TYPES,toMySQLDateTime,ORDER_DIRECTIONS}
 
-
-
-
-
-module.exports = {Query, Filter,ACTION_TYPES,ORDER_DIRECTIONS,LikePatterns,tableDotField,MySQLQuery,toMySQLDateTime}
 

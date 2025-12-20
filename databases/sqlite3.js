@@ -9,6 +9,8 @@ const { InvalidIdGiven } = require("./errors")
 const { Databases, DATABASE_TYPES } = require(".")
 const { InvalidArgumentError } = require("../errors")
 const dataclasses = require("../dataclasses")
+const {ACTION_TYPES} = require("../query/sqliteQuery");
+
 /**
  * Create a new database in the given url (should be local )
  * Don't call it on your Own.
@@ -453,6 +455,14 @@ class SQLiteDatabase extends Database{
         await this.databaseFunctionToPromise(`run`,queryStr,[...keys.map(e => query[e])])
         return deletedObjects;
     }
+
+    async runQuery(type,query,values){
+            if(type === ACTION_TYPES.SELECT){
+                const r = await this.databaseFunctionToPromise('all',query,values)
+                return r;
+            }
+          await this.databaseFunctionToPromise('run',query,values)
+        }
 
     /**
      * close the connection with the database 

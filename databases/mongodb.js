@@ -6,6 +6,7 @@ const { DataClassFactory } = require("../dataclasses");
 const {createMongoDBField} = require("../utils");
 const { DATABASE_TYPES } = require(".");
 const {deleteManyFromCollection} = require("../actions/deleteActions");
+const {ACTION_TYPES} = require("../query/mongodbQuery")
 
 // Data classes models will be saved here
 const savedClasses = {}
@@ -130,6 +131,26 @@ class MongoDBDatabase extends Database {
 
     toString(){
         return "mongodb"
+    }
+
+    async runQuery(actionType,query,values){
+        const {dClass,limitSkipOrderConstraints,fields,updateValues} = values;
+        const model = dataClassToModel(dClass)
+        if(actionType === ACTION_TYPES.INSERT){
+          const output =   await model.insertMany([query])
+            return output;
+        }else if(actionType === ACTION_TYPES.UPDATE){
+            const output = await model.updateMany(query,updateValues)
+            return output;
+        }else if(actionType === ACTION_TYPES.SELECT){
+            console.log(fields)
+           const output =  await model.find(query,fields,limitSkipOrderConstraints)
+            return output;
+        }else if(actionType === ACTION_TYPES.DELETE){
+            const output = await model.deleteMany(query)
+            return output;
+        }
+
     }
 
 }

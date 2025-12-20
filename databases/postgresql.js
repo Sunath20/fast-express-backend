@@ -190,6 +190,11 @@ CREATE TRIGGER ${name}_update_updated_at
         await this.connection.query(queryString,[...Object.values(query)]);
         return objects;
     }
+
+    async runQuery(query,values){
+       const r =  (await (this.connection.query(query,values))).rows;
+       return r;
+    }
 }
 
 module.exports = {PostgresDatabase,createField,types,createRelationalField}

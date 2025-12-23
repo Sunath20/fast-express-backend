@@ -36,10 +36,9 @@ function toMySQLDateTime(date) {
 
 class MySQLQuery extends Query {
 
-    constructor(dClass,dType) {
+    constructor(dClass) {
         super();
         this.dClass = dClass;
-        this.dType = dType;
         this.values = []
         this.filters = []
         this.queryBase = ''

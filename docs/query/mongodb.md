@@ -56,6 +56,7 @@ const query = new MongodbQuery(User)
 ## Save data with the query
 
 We need to do few things.
+
     1. Set  up the query
     2. Build the query
     3. Run the query

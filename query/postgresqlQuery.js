@@ -59,6 +59,11 @@ class PostgresqlQuery extends Query {
         return this
     }
 
+    distinct(fieldName){
+        this.queryBase += ` DISTINCT ${fieldName} FROM `
+    }
+
+
     /**
      *
      * @param fields - {String[] || "*" }
@@ -178,6 +183,14 @@ class PostgresqlQuery extends Query {
         return this;
     }
 
+    notEqual(fieldName,value){
+        const constraints = ` ${fieldName}=$${this.valueIndex}`
+        this.values.push(value)
+        this.filters.push(constraints)
+        this.updateIndex();
+        return this;
+    }
+
     like(fieldName,value,position){
         let pattern = position;
         switch (position){
@@ -213,6 +226,23 @@ class PostgresqlQuery extends Query {
 
         return {query:this.queryBase,values:this.values}
 
+    }
+
+
+    innerJoin(joinTable,fieldNameOne,fieldNameTwo)    {
+        this.queryBase += `Inner join ${joinTable} ON ${fieldNameOne}=${fieldNameTwo}`
+    }
+
+    leftJoin(joinTable,fieldNameOne,fieldNameTwo)    {
+        this.queryBase += `left join ${joinTable} ON ${fieldNameOne}=${fieldNameTwo}`
+    }
+
+    rightJoin(joinTable,fieldNameOne,fieldNameTwo)    {
+        this.queryBase += `right join ${joinTable} ON ${fieldNameOne}=${fieldNameTwo}`
+    }
+
+    fullJoin(joinTable,fieldNameOne,fieldNameTwo)    {
+        this.queryBase += `full outer join ${joinTable} ON ${fieldNameOne}=${fieldNameTwo}`
     }
 
 }

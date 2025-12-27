@@ -141,7 +141,7 @@ CREATE TRIGGER ${name}_update_updated_at
         const name = this.dataClassToName(table)
         let queryString = `SELECT  * FROM ${name} `
         if(query){
-            const newPart =` WHERE ${Object.keys(query).map((e,i) => `${e}=$${i+1}`).join(",")} ` 
+            const newPart =` WHERE ${Object.keys(query).map((e,i) => `${e}=$${i+1}`).join(" and ")} `
             queryString  = queryString + newPart;
         }
         queryString += `limit ${limit} offset ${skip}`

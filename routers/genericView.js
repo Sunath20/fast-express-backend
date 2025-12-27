@@ -1,37 +1,33 @@
-
-/**
- * 
- A class which contains routes belong to a special data class
- normally a few routes are begin created when you pass down the data class.
- Basic cruds , get , getAll,post,update,delete are being created
- */
-
 class GenericView {
 
-    constructor(dataClass){
-        this.dataClass = dataClass
+    init(){
+        const fields = Object.getOwnPropertyNames(this);
+        const functionString = this['get'].toLocaleString();
+        const indexOne = functionString.indexOf('(')
+        const indexTwo = functionString.indexOf(')')
+        console.log(indexTwo,indexOne)
+        const args = functionString.slice(indexOne,indexTwo-indexOne)
+        console.log(args)
     }
 
 
-    reqGet(){
-
+    get = function (req){
+        console.log(req);
     }
+    add = function (){}
+    update = function (){}
+    delete = function (){}
 
-    reqPost(){
-
-    }
-
-    reqUpdate(){
-
-    }
-
-    reqDelete(){
-
-    }
-
-    reqGetAll(){
-
-    }
-
+    get_id = function (){}
+    update_id = function (){}
+    delete_id = function (){}
 
 }
+
+class UserView extends GenericView {
+
+}
+
+
+const u = new UserView();
+u.init();

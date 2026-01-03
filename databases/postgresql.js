@@ -14,7 +14,7 @@ const types = {
     "FLOAT":"DOUBLE PRECISION",
     "BOOLEAN":"BOOLEAN",
     "DATE":"DATE",
-    "DATETIME":"DATETIME"
+    "DATETIME":"TIMESTAMP WITH TIME ZONE"
 }
 
 

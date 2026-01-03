@@ -6,14 +6,15 @@ const uuid = require('uuid')
 const {dataClassToName} = require("../utils/dataclassToName")
 const { DataClassFactory } = require("../dataclasses")
 const { DATABASE_TYPES } = require(".")
-const mongoose = require("mongoose");
+
 
 const types = {
     "INTEGER":"BIGINT",
     "TEXT":"TEXT",
     "FLOAT":"DOUBLE PRECISION",
     "BOOLEAN":"BOOLEAN",
-    "DATE":"DATE"
+    "DATE":"DATE",
+    "DATETIME":"DATETIME"
 }
 
 
@@ -74,7 +75,7 @@ class PostgresDatabase  extends Database{
 
 
     async connect(host,user,password,database,port=5432,metaData){
-        const client = new Client({host,port,user,password,database,port,...metaData})
+        const client = new Client({host,user,password,database,port,...metaData})
         try{
             await client.connect()
             this.connection = client

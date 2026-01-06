@@ -14,7 +14,7 @@ const types = {
     "FLOAT":"DOUBLE PRECISION",
     "BOOLEAN":"BOOLEAN",
     "DATE":"DATE",
-    "DATETIME":"TIMESTAMP WITH TIME ZONE"
+    "DATETIME":" TIMESTAMP WITH TIME ZONE "
 }
 
 
@@ -94,7 +94,7 @@ class PostgresDatabase  extends Database{
         const keys = DataClassFactory.createFactory(dataClass,{'DATABASE':DATABASE_TYPES.POSTGRES}).getModelFieldsExpect(['_id','createdAt','updatedAt'])
         const uniqueFields = keys.filter(e => instance[e].unique)
         const foreignKeys = keys.filter(e => instance[e]['relational'])
-        let tableTemplate = `CREATE TABLE IF NOT EXISTS ${name} (_id TEXT NOT NULL ,createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ,updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,${keys.map(e => fieldToQueryString(e,instance[e])).join(",") }, ${uniqueFields.length > 0 ? `UNIQUE(${uniqueFields.join(",")}),`  : ""} PRIMARY KEY (_id) ${foreignKeys.length > 0 ?"," : ''} ${foreignKeys.map(e => relationFieldToString(e,instance[e] || null)).join(",")});`
+        let tableTemplate = `CREATE TABLE IF NOT EXISTS ${name} (_id TEXT NOT NULL ,createdAt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP ,updatedAt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,${keys.map(e => fieldToQueryString(e,instance[e])).join(",") }, ${uniqueFields.length > 0 ? `UNIQUE(${uniqueFields.join(",")}),`  : ""} PRIMARY KEY (_id) ${foreignKeys.length > 0 ?"," : ''} ${foreignKeys.map(e => relationFieldToString(e,instance[e] || null)).join(",")});`
         tableTemplate += `
 CREATE OR REPLACE FUNCTION update_changetimestamp_column()
 RETURNS TRIGGER AS $$

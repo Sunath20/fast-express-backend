@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "run": "node .\\play\\dataclass\\dataclass_1.js",
+    "run": "node .\\tests\\migrate\\migrate1.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test-cruds": "nodemon tests/basic_cruds_test.js --trace-warnings"
   },

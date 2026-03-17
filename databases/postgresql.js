@@ -38,7 +38,7 @@ function createField(type,unique,notNull=true,validators=[],before_validation=nu
     }else if(type == types.BOOLEAN){
         data.type = Boolean
     }else if(type == types.FLOAT || type == types.INTEGER){
-        data.type == Number
+        data.type = Number
     }
 
     return {...data,sqlType:type,unique,notNull,validators,before_validation,after_validation,metaData}
@@ -69,7 +69,7 @@ class PostgresDatabase  extends Database{
 
     constructor(){
         super()
-        this.dataClassToName = dataClassToName.bind({})
+
     }
 
 
@@ -88,7 +88,7 @@ class PostgresDatabase  extends Database{
     }
 
     async createTable(dataClass){
-        const name = this.dataClassToName(dataClass)
+        const name = dataClassToName(dataClass)
         const instance = new dataClass()
         
         const keys = DataClassFactory.createFactory(dataClass,{'DATABASE':DATABASE_TYPES.POSTGRES}).getModelFieldsExpect(['_id','createdAt','updatedAt'])
@@ -117,10 +117,10 @@ CREATE TRIGGER ${name}_update_updated_at
 
 
     async createObject(dataClass,data){
-        const name = this.dataClassToName(dataClass)
-        const keys = ["_id",...DataClassFactory.createFactory(dataClass,{'DATABASE':DATABASE_TYPES.POSTGRES}).getModelFieldsExpect(['createdAt','updatedAt'])]
+        const name = dataClassToName(dataClass)
+        const keys = ["_id",...Object.keys(data)]
         const query  = `INSERT INTO ${name} (${keys.join(",")}) VALUES (${keys.map((e,i) => `$${i+1}`).join(",")}) RETURNING *`
-        const id = await uuid.v4()
+        const id = uuid.v4()
         data['_id'] = id
         const response = await this.connection.query(query,keys.map(e => data[e]))
         return response.rows;

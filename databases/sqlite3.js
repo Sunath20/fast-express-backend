@@ -10,6 +10,8 @@ const { Databases, DATABASE_TYPES } = require(".")
 const { InvalidArgumentError } = require("../errors")
 const dataclasses = require("../dataclasses")
 const {ACTION_TYPES} = require("../query/sqliteQuery");
+const { dataClassToName } = require("../utils/dataclassToName")
+const {isValueValid} = require("../utils/valueCheckings");
 
 /**
  * Create a new database in the given url (should be local )
@@ -120,7 +122,7 @@ function createField(type,unique=false,nullable=false,validations=null,beforeVal
             jsType = String
             break;
     }
-    return {type:jsType,sqlType:type,unique,validations,beforeValidation,afterValidation,...metaData}
+    return {type:jsType,sqlType:type,unique,nullable,validations,beforeValidation,afterValidation,...metaData}
 }
 /**
  * Create a relational field in the database
@@ -164,7 +166,7 @@ const types = {
 
 // 
 const DEFAULT_TABLE_CREATION = "_id TEXT NOT NULL UNIQUE, createdAt TEXT default current_timestamp, updatedAt TEXT default current_timestamp"
-
+const  DEFAULT_COPYING_TABLE_COLUMNS = ["_id","createdAt","updatedAt"]
 /**
  * turns the dataclass field into table created field in string version.(can use for creating table queries)
  * @param {String} name 
@@ -172,6 +174,7 @@ const DEFAULT_TABLE_CREATION = "_id TEXT NOT NULL UNIQUE, createdAt TEXT default
  * @returns 
  */
 function databaseFieldIntoQueryField(name,field){
+    console.log(name,field)
     return `${name} ${field.sqlType} ${field.unique ? "UNIQUE" : ""} ${!field.nullable ? "NOT NULL" : ""}`
 }
 
@@ -264,9 +267,9 @@ class SQLiteDatabase extends Database{
      * @param {table} - name of the table you want to get details
      * @returns 
      */
-    async getTableInfo(table){
+    async getTableInfo(dataClass){
         // get all the details of the table
-        return this.databaseFunctionToPromise('all',`PRAGMA table_info(${table});`)
+        return this.databaseFunctionToPromise('all',`PRAGMA table_info(${dataClassToName(dataClass)});`)
     }
 
     /**
@@ -302,15 +305,16 @@ class SQLiteDatabase extends Database{
      * @param {Object} data - data validated through data class 
      */
     async createObject(table,data){
+        const tableName = dataClassToName(table)
         // generate a new id for the table
-        const id = await this.generateNewUniqueID(table)
+        const id = await this.generateNewUniqueID(tableName)
         // get the table columns through data object
         const keys = Object.keys(data)
         // console.log("Table Name Is ",table)
         // create the object in the database
-         await this.databaseFunctionToPromise(`run`,`INSERT INTO ${table} (_id,${keys.join(",")}) VALUES (${"?,"+keys.map(e => "?").join(",")})`,[id,...keys.map(e => data[e])])
+         await this.databaseFunctionToPromise(`run`,`INSERT INTO ${tableName} (_id,${keys.join(",")}) VALUES (${"?,"+keys.map(e => "?").join(",")})`,[id,...keys.map(e => data[e])])
         //  get the new user from the database  with that id
-       const newUser = await this.databaseFunctionToPromise('get',`SELECT * FROM ${table} where _id=?`,[id])
+       const newUser = await this.databaseFunctionToPromise('get',`SELECT * FROM ${tableName} where _id=?`,[id])
         // return the user    
        return newUser
     }
@@ -360,7 +364,7 @@ class SQLiteDatabase extends Database{
         // if the data is given
         if(data !=null){
             // add the where clause to the query
-           query += ' where ' + parameters.map(e => `${e}=?`).join("and") + " "
+           query += ' where ' + parameters.map(e => `${e}=?`).join(" and ") + " "
             if(getOBJ){
                 query += "limit " + limit + " offset " + skip
             }
@@ -476,6 +480,157 @@ class SQLiteDatabase extends Database{
         })
     }
 
+
+
+
+
+
+    /**
+ * 
+ * @param {SQLiteDatabase} db
+ * @param {DataClass} dataClass 
+ * @param {Map} newFieldsMap 
+ * @param {Map} removeFieldsMap 
+ * @param {Map} changedFieldsMap 
+ */
+    async migrate(dataClass){
+    const tableName = dataClassToName(dataClass)
+
+    const dbFields = new Map()
+    const dataClassFields = new Map()
+    const changedFields = new Map()
+
+    const newFieldsSet = new Map()
+    const removeFieldsSet = new Map()
+
+
+    const databaseReturnedInfo =  (await this.getTableInfo(dataClass))
+
+    databaseReturnedInfo.forEach(e => {
+        const name = e['name']
+        const isColumn =  name !== "_id" && name !== "createdAt" && name !== "updatedAt"
+        if(isColumn){
+            dbFields.set(name,e)
+        }
+    })
+
+    const instance = new dataClass()
+    const properties = DataClass.getOwnPropertyNames(instance)
+    
+    properties.forEach(e => {
+            dataClassFields.set(e,instance[e])
+    })
+
+
+    for(const field of dataClassFields.keys()){
+        if(!dbFields.has(field)){
+            newFieldsSet.set(field,dataClassFields.get(field))
+        }else{
+            const dcField = dataClassFields.get(field)
+            const dbField = dbFields.get(field)
+
+            const typeChanged = dcField.sqlType !== dbField.type
+            const nullableChanged = dcField.nullable !== (dbField.notnull === 0)
+
+            if (typeChanged || nullableChanged){
+                changedFields.set(field,{dbField,dcField,typeChanged,nullableChanged})
+            }
+            
+            dbFields.delete(field)
+        }
+    }
+
+    for(const field of dbFields.keys()){
+        if(!dataClassFields.has(field)){
+            removeFieldsSet.set(field,dbFields.get(field))
+        }
+    }
+
+
+
+        for(const field of newFieldsSet.keys()){
+            const info  = newFieldsSet.get(field)
+            const defaultVal = info.defaultValue
+            if ( (!info.nullable && !isValueValid(defaultVal))){
+                console.error("Can't Add a not nullable field with non default value")
+                return false
+            }
+
+            if (info.unique && isValueValid(defaultVal)){
+                console.error("Field can't be unique and have a default value too")
+                return false
+            }
+        
+        }
+
+        for(const field of changedFields.keys()){
+            const info = changedFields.get(field)
+            if(info.nullableChanged){
+                if(!info.dcField.nullable && !isValueValid(info.dcField.defaultValue)){
+                    console.error("Can't change null to not null if defaultValue not defined")
+                    return false;
+                }
+            }
+        }
+
+        const onlyAddingField = (removeFieldsSet.size + changedFields.size === 0)
+        if (onlyAddingField){
+            
+
+            for(let field of newFieldsSet.keys()){
+                    const info = newFieldsSet.get(field)
+                    const notNull = info.nullable ? '' :" NOT NULL "
+                    const defaultValue = isValueValid(info.defaultValue) ? `DEFAULT ${info.defaultValue}` : ""
+                    const unique = info.unique ? "UNIQUE" : ""
+                    const addingColumnsTemplate = `ALTER TABLE ${tableName} ADD COLUMN ${field} ${info.sqlType} ${unique} ${notNull} ${defaultValue}`
+                    try{
+                            const responseData = await this.databaseFunctionToPromise('run',addingColumnsTemplate)
+                            console.log(`Migrated : ADDED ${field} to ${tableName}`)
+                    }catch (error){
+                            console.error(`Migration failed : Could not add ${field} to ${tableName}`)
+                            console.error(error)
+                            return false
+                    }
+                }
+            
+        }else{
+            const userDefinedFields = Array.from(dataClassFields.keys())
+            let tableTemplate = `CREATE TABLE "tmp_${tableName}" (${DEFAULT_TABLE_CREATION},${ userDefinedFields.map((e) => databaseFieldIntoQueryField(e,instance[e])).join(",") },PRIMARY KEY ("_id")${this.hasRelationalFields(userDefinedFields,instance) ? ',' : ''}${this.hasRelationalFields(userDefinedFields,instance) ? userDefinedFields.filter(e => instance[e].relational).map(e => ` FOREIGN KEY (${e}) REFERENCES ${instance[e].relationalTable}(${instance[e].relationalField}) `).join(",") : ''}) `
+            const copyingFields = [...DEFAULT_COPYING_TABLE_COLUMNS,...userDefinedFields.filter(e => !newFieldsSet.has(e))]
+            let copyingDataTemplate = `INSERT INTO ${"tmp_"+tableName} (${copyingFields.join(",")}) SELECT ${copyingFields.join(",")} FROM ${tableName}`
+            let tableDropTemplate = `DROP TABLE ${tableName}`
+            let renameTemplate = `ALTER TABLE tmp_${tableName} RENAME TO ${tableName}`
+
+            try{
+                let response = await this.databaseFunctionToPromise('run',tableTemplate)
+                console.log("MIGRATING: CREATING NEW DATABASE TABLE FOR COPYING DATA")
+                response = await this.databaseFunctionToPromise('run',copyingDataTemplate)
+                console.log("MIGRATING : COPIED THE DATA FROM THE TABLE "+tableName)
+                response = await this.databaseFunctionToPromise('run',tableDropTemplate)
+                console.log('MIGRATING : DROP THE CURRENT TABLE '+tableName)
+                response = await this.databaseFunctionToPromise('run',renameTemplate)
+                console.log(`MIGRATED : ${tableName} successfully updated `)
+            }catch(error){
+                console.error("Migration failed for " + tableName)
+                console.error("You may need to manually drop tmp_" + tableName)
+                console.error(error)
+                return false
+            }
+        }
+
+        return true;
+    }
+
+
+    hasRelationalFields(userDefinedFields, instance) {
+        for(const userDefineField of userDefinedFields){
+            if(instance[userDefineField].relational){
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 module.exports = {createDatabase,SQLiteDatabase,types,createField,createRelationField}

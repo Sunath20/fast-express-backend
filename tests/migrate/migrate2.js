@@ -7,17 +7,19 @@ const {SQLiteDatabase} = require("../../databases/sqlite3")
 const {createPassword} = createPasswordHashing("d2nd2bhvdg2be2,, fmf 2fhvehv w ,3f3n,mf32dnm3ndm3  3 f")
 
 
-const { createField, types } = require("../../databases/sqlite3");
+const { createField, types } = require("../../databases/postgresql");
 const { isValueValid } = require("../../utils/valueCheckings");
 const { dataClassToName } = require("../../utils/dataclassToName");
+const {PostgresDatabase} = require("../../databases/postgresql");
+const {DATABASE_TYPES} = require("../../databases");
+const {Database} = require("../../databases/database");
 
 class UserDataClass extends DataClass {
     username = createField(types.TEXT, false, false, [
         is_required("Username is required"),
         minLength(8, "Username must contain 8 letters")
     ])
-    password = createField(types.REAL, false, false, [], null, createPassword,{defaultValue:"password"})
-
+    password = createField(types.TEXT, false, true, [], null, createPassword,{defaultValue:"password"})
 
 
     getName(){return "users"}
@@ -26,10 +28,20 @@ class UserDataClass extends DataClass {
 
 
 async function runner() {
-    const db = new SQLiteDatabase("test_migrates.db")
-    await db.connect()
+    const db = new PostgresDatabase()
+    await db.connect(
+        "localhost",
+        "postgres",
+        "1234",
+        "test-migrate",
+        5432
+    )
+
+
+
     await db.createTable(UserDataClass)
     await db.migrate(UserDataClass)
+    await db.disconnect()
 }
 
 
@@ -38,5 +50,6 @@ runner().then(e => {
 }).catch(e => {
     console.log(e)
 }).finally(() => {
+
     console.log("This is the end")
 })

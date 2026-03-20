@@ -3,13 +3,14 @@ const {is_required, minLength} = require("../../dataclasses/validators");
 const { createPasswordHashing } = require("../../utils/password_hashing");
 
 const {SQLiteDatabase} = require("../../databases/sqlite3")
-
+const {hasMany,belongsTo, manyToMany, ON_DELETE} = require("../../databases/relations")
 const {createPassword} = createPasswordHashing("d2nd2bhvdg2be2,, fmf 2fhvehv w ,3f3n,mf32dnm3ndm3  3 f")
 
 
 const { createField, types } = require("../../databases/sqlite3");
 const { isValueValid } = require("../../utils/valueCheckings");
 const { dataClassToName } = require("../../utils/dataclassToName");
+const {User} = require("../../docs/code/dataclass/dataclass_1");
 
 class UserDataClass extends DataClass {
     username = createField(types.TEXT, false, false, [
@@ -18,23 +19,47 @@ class UserDataClass extends DataClass {
     ])
     password = createField(types.REAL, false, false, [], null, createPassword,{defaultValue:"password"})
 
+    messages = hasMany(Message)
+    rooms = manyToMany(Room)
 
 
     getName(){return "users"}
 }
 
+class Message  extends DataClass {
+
+    getName(){return "message"}
+
+    text = createField(types.TEXT, false, false, [])
+
+    userID = belongsTo(UserDataClass,"_id",false,ON_DELETE.CASCADE,types.TEXT)
+}
+
+class Room extends DataClass {
+    getName(){return "room"}
+
+    name = createField(types.TEXT, false, false, [])
+
+    users = manyToMany(UserDataClass)
+}
+
 
 
 async function runner() {
-    const db = new SQLiteDatabase("test_migrates.db")
+    const db = new SQLiteDatabase("test_relations.db")
     await db.connect()
-    await db.createTable(UserDataClass)
-    await db.migrate(UserDataClass)
+    await db.createTables(UserDataClass,Message,Room)
+    console.log(await db.databaseFunctionToPromise('all', `PRAGMA foreign_key_list(message)`))
+//     console.log(await db.getTableInfo(UserDataClass))
+//     console.log(await db.getTableInfo(Message))
+//     console.log(await db.getTableInfo(Room))
+// // and the join table
+//     console.log(await db.databaseFunctionToPromise('all', `PRAGMA table_info(room_users)`))
 }
 
 
 runner().then(e => {
-    console.log(e)
+    // console.log(e)
 }).catch(e => {
     console.log(e)
 }).finally(() => {

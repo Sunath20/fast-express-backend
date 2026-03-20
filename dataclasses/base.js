@@ -8,6 +8,7 @@ const { linearFindMaxNumber } = require("../utils/linearAlogirthms");
 const {getModelObjectWithPayload} = require("../actions/getActions");
 const {updateTheModelWithTheId} = require("../actions/putActions");
 const { Databases, DATABASE_TYPES} = require("../databases");
+const {RELATION_TYPES} = require("../databases/relations");
 
 
 class DATACLASS_NAMES {
@@ -285,6 +286,31 @@ class DataClass{
         const schema = new Schema(shcemaObject,{timestamps:timestamps});
         const model = mongoose.model(this.getName(),schema) 
         return model;
+    }
+
+    static getColumnsAndRelationFields(dataClass){
+        const instance = new dataClass()
+        const relationalFields  = []
+        const columns = []
+        const manyToManyFields = []
+        DataClass.getOwnPropertyNames(instance).forEach((propertyName)=>{
+
+            const info = instance[propertyName]
+            if(info.isRelation && !info.createColumn){
+                if(info.relation === RELATION_TYPES.MANY_TO_MANY){
+                    manyToManyFields.push(propertyName)
+                }else{
+
+                    relationalFields.push(propertyName)
+                }
+
+            }else{
+
+                columns.push(propertyName)
+            }
+        })
+
+        return {columns,relationalFields,manyToManyFields};
     }
 
 }

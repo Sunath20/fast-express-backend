@@ -1,13 +1,13 @@
 
 
 
-
+const dataClassMapper = new Map()
 function dataClassToName(dClass){
-    if(!this[dClass]){
+    if(!dataClassMapper.has(dClass)){
         const instance = new dClass()
-        this[dClass] = instance.getName()
+        dataClassMapper.set(dClass,instance.getName())
     }
-    return this[dClass]
+    return dataClassMapper.get(dClass)
 }
 
 

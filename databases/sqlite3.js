@@ -12,6 +12,7 @@ const dataclasses = require("../dataclasses")
 const {ACTION_TYPES} = require("../query/sqliteQuery");
 const { dataClassToName } = require("../utils/dataclassToName")
 const {isValueValid} = require("../utils/valueCheckings");
+const {query} = require("express");
 
 /**
  * Create a new database in the given url (should be local )
@@ -174,7 +175,7 @@ const  DEFAULT_COPYING_TABLE_COLUMNS = ["_id","createdAt","updatedAt"]
  * @returns 
  */
 function databaseFieldIntoQueryField(name,field){
-    console.log(name,field)
+    // console.log(name,field)
     return `${name} ${field.sqlType} ${field.unique ? "UNIQUE" : ""} ${!field.nullable ? "NOT NULL" : ""}`
 }
 
@@ -191,6 +192,8 @@ class SQLiteDatabase extends Database{
     database;
     currentTables = [];
     queries = []
+
+    static instances = new Map()
 
     constructor(URL){
         super()
@@ -234,19 +237,21 @@ class SQLiteDatabase extends Database{
         const dataClassInstance = new dataClass();
         // Create a factory and retrieve the fields
         // We can do it with data class too.But in this way we are to write less code 😉😉
-        const allFields = DataClassFactory.createFactory(dataClass,{'DATABASE':DATABASE_TYPES.SQLITE}).getModelFields();
+        const {columns,relationalFields,manyToManyFields} = DataClass.getColumnsAndRelationFields(dataClass)
         // Get the user defined fields
         // That means we remove the `createdAt` and `updatedAt` fields since they are added by the our default table creation
-        let userDefinedFields = allFields.splice(0,allFields.length-2)
+        let userDefinedFields = columns
         // if the table dose not exist in the database 
         if( this.existingTableNames.indexOf(dataClassInstance.getName()) == -1){
             // create the template
             // first default table creation
+            // console.log(dataClassInstance)
             // then add the user defined fields
-            let tableTemplate = `CREATE TABLE "${dataClassInstance.getName()}" (${DEFAULT_TABLE_CREATION},${ userDefinedFields.map((e) => databaseFieldIntoQueryField(e,dataClassInstance[e])).join(",") },PRIMARY KEY ("_id") ${userDefinedFields.length == 0 ? '' : userDefinedFields.filter(e => dataClassInstance[e].relational).map(e => ` FOREIGN KEY (${e}) REFERENCES ${dataClassInstance[e].relationalTable}(${dataClassInstance[e].relationalField}) `).join(",")}) `
+            let tableTemplate = `CREATE TABLE "${dataClassInstance.getName()}" (${DEFAULT_TABLE_CREATION},${ userDefinedFields.map((e) => databaseFieldIntoQueryField(e,dataClassInstance[e])).join(",") },PRIMARY KEY ("_id") ${userDefinedFields.length == 0 ? '' : userDefinedFields.filter(e => dataClassInstance[e].isRelation && dataClassInstance[e].createColumn).map(e => ` FOREIGN KEY (${e}) REFERENCES ${dataClassToName(dataClassInstance[e].parentDataClass)}(${dataClassInstance[e].column}) ON DELETE ${dataClassInstance[e].onDeletion} `).join(",")}) `
             // run the table query and return it's response
             // console.log(tableTemplate)
             return this.databaseFunctionToPromise('run',tableTemplate)
+            // console.log(tableTemplate)
         }
         // Otherwise return a common response like a constant String
         return "Table is already created";
@@ -499,10 +504,9 @@ class SQLiteDatabase extends Database{
     const dbFields = new Map()
     const dataClassFields = new Map()
     const changedFields = new Map()
-
     const newFieldsSet = new Map()
     const removeFieldsSet = new Map()
-
+    const createdTables = new Map()
 
     const databaseReturnedInfo =  (await this.getTableInfo(dataClass))
 
@@ -571,6 +575,11 @@ class SQLiteDatabase extends Database{
                     return false;
                 }
             }
+
+            if(info.typeChanged){
+                console.error("Can't change types since copying data may cause errors.In order to do so you gonna have to change the database manually.And set the field type to the new type in the dataclass")
+                return false;
+            }
         }
 
         const onlyAddingField = (removeFieldsSet.size + changedFields.size === 0)
@@ -630,6 +639,97 @@ class SQLiteDatabase extends Database{
         }
 
         return false;
+    }
+
+    async createTables(...dataClasses){
+        const creatableAtOnce = []
+        let manyToManyTables = new Map()
+        const createAfter = new Map()
+        const tableCreated = new Map()
+
+        for(const dataClass of dataClasses){
+            if(!SQLiteDatabase.instances.get(dataClass)){
+                SQLiteDatabase.instances.set(dataClass, new dataClass());
+            }
+
+            const instance = SQLiteDatabase.instances.get(dataClass);
+            const {manyToManyFields,columns,relationalFields} = DataClass.getColumnsAndRelationFields(dataClass)
+            const shouldTableCreateAfter = columns.filter(e => {
+                return instance[e].isRelation
+            }).map(e => instance[e].parentDataClass)
+
+            manyToManyFields.forEach(e => {
+                const column = instance[e]
+                const table1_name = instance.getName()
+                const table_2_name = dataClassToName(column.dataClass)
+                const table_name = [table1_name,table_2_name].sort((a,b) => {
+                    if(a > b) return 1;
+                    return -1;
+                }).join("_");
+                if(!manyToManyTables.has(table_name)){
+                    manyToManyTables.set(table_name,{classOne:dataClass,classTwo:column.dataClass})
+                }
+            })
+
+            if(shouldTableCreateAfter.length > 0){
+                createAfter.set(dataClass,shouldTableCreateAfter)
+            }else{
+                creatableAtOnce.push(dataClass)
+            }
+        }
+
+        for(const dataClass of creatableAtOnce){
+            await this.createTable(dataClass)
+            console.log("Created : ",dataClass)
+            tableCreated.set(dataClass,true)
+        }
+
+        let tablesToCreate = Array.from(createAfter.keys())
+        const maximumIterations  = 100;
+        let currentIteration = 0 ;
+        while(tablesToCreate.length > 0){
+            currentIteration++;
+
+            for(const dataClass of tablesToCreate){
+                let shouldCreateTable = true;
+                for(const shouldHaveCreated of createAfter.get(dataClass)){
+                    if(!tableCreated.has(shouldHaveCreated)){
+                        shouldCreateTable = false;
+                        break;
+                    }
+                }
+                if(!shouldCreateTable){continue;}
+                await this.createTable(dataClass)
+                tableCreated.set(dataClass,true)
+                tablesToCreate = tablesToCreate.filter(e => e !== dataClass)
+            }
+
+
+
+            if(currentIteration > 100){
+                throw new Error("Could not create some tables may have other table connected with a foreign key while the other tables also may has a foreign key for the table without many to many")
+            }
+
+
+        }
+
+        for(const tableName of manyToManyTables.keys()){
+            await this._manyToManyTable(tableName,manyToManyTables.get(tableName))
+            console.log("Created table: ",tableName)
+        }
+
+    }
+
+    async _manyToManyTable(tableName,{classOne,classTwo}){
+        const classOneName = dataClassToName(classOne)
+        const classTwoName = dataClassToName(classTwo)
+        const firstColumnName = `${classOneName}_id`
+        const secondColumnName = `${classTwoName}_id`
+
+        const template = `CREATE TABLE IF NOT EXISTS ${tableName}(${firstColumnName} TEXT NOT NULL , ${secondColumnName} TEXT NOT NULL , PRIMARY KEY (${firstColumnName} , ${secondColumnName} )  ,
+FOREIGN KEY (${firstColumnName}) REFERENCES ${classOneName}(_id) ON DELETE CASCADE,
+FOREIGN KEY (${secondColumnName}) REFERENCES ${classTwoName}(_id) ON DELETE CASCADE  )`
+        return  this.runQuery('run',template)
     }
 }
 

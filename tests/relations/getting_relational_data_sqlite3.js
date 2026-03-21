@@ -38,11 +38,15 @@ async  function runner(){
 
     await db.createTables(UserDataClass,MessageDataClass,MessageMetaDataClass)
     const query = new SqliteQuery(UserDataClass)
+    const messageQuery = new SqliteQuery(MessageDataClass)
+    messageQuery.startFiltering().equals("text","Fifth message").endFiltering()
 
     query.setActionType(ACTION_TYPES.SELECT)
     query.setSelectingFields("*")
     query.setTableName(UserDataClass)
-    query.preload("messages.meta")
+    query.preload("messages.meta",{
+        messages:messageQuery
+    })
     const result = await query.execute(db)
     console.log(JSON.stringify(result))
 }

@@ -41,11 +41,19 @@ async  function runner(){
 
     await db.createTables(UserDataClass,MessageDataClass,MessageMetaDataClass)
     const query = new MySQLQuery(UserDataClass)
-
+    const messageQuery = new MySQLQuery()
+    messageQuery.startFiltering().equals("text","Second Message").endFiltering()
+    // await db.runQuery("INSERT INTO users (_id, username, password) VALUES (?, ?, ?)",
+    //     ['user-2', 'johndoe123', 'hashedpassword'])
+    //
+    // await db.runQuery("INSERT INTO messages (_id, text, userID) VALUES (?, ?, ?), (?, ?, ?)",
+    //     ['msg-2', 'Hello world', 'user-1', 'msg-3', 'Second message', 'user-1'])
     query.setActionType(ACTION_TYPES.SELECT)
     query.setSelectingFields("*")
     query.setTableName(UserDataClass)
-    query.preload("messages.meta")
+    query.preload("messages.meta",{
+        messages:messageQuery
+    })
     const result = await query.execute(db)
     console.log(JSON.stringify(result))
 }

@@ -10,6 +10,7 @@ const {DataClass} = require("../index");
 const {query} = require("express");
 const {isValueValid} = require("../utils/valueCheckings");
 const {add} = require("nodemon/lib/rules");
+const {Databases} = require("./index");
 
 
 const types = {
@@ -82,6 +83,7 @@ class PostgresDatabase  extends Database{
         try{
             await client.connect()
             this.connection = client
+            Databases.connections[DATABASE_TYPES.POSTGRES] = this;
         }catch(error){
             console.error(error)
             throw new Error("could not connect the database.")    

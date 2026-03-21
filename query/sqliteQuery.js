@@ -45,6 +45,7 @@ class SqliteQuery extends Query {
         this.dClass = dClass;
         this.dType = dType;
         this.values = []
+        this.filterValues = []
         this.filters = []
         this.queryBase = ''
         this.orderByExpression = ''
@@ -137,6 +138,7 @@ class SqliteQuery extends Query {
     graterThan(field,value){
         const expression = `${field} > ?`
         this.values.push(value)
+        this.filterValues.push(value)
         this.filters.push(expression)
 
         return this;
@@ -145,6 +147,7 @@ class SqliteQuery extends Query {
     lessThan(field,value){
         const expression = `${field} < ?`
         this.values.push(value)
+        this.filterValues.push(value)
         this.filters.push(expression)
 
         return this;
@@ -159,14 +162,16 @@ class SqliteQuery extends Query {
     equals(fieldName,value){
         const constraints = ` ${fieldName}=? `
         this.values.push(value)
+        this.filterValues.push(value)
         this.filters.push(constraints)
         return this;
     }
 
 
     notEquals(fieldName,value){
-        const constraints = ` ${fieldName}=?`
+        const constraints = ` ${fieldName}!=?`
         this.filters.push(constraints)
+        this.filterValues.push(value)
         this.values.push(value);
         return this;
     }
@@ -189,6 +194,7 @@ class SqliteQuery extends Query {
         }
         const expression = ` ${fieldName} LIKE ?`
         this.filters.push(expression)
+        this.filterValues.push(value)
         this.values.push(pattern.replace("?",value))
     }
 
@@ -229,7 +235,7 @@ class SqliteQuery extends Query {
 
     preloads = []
     preloadChain = []
-    preload(relation){
+    preload(relation,filters={}){
         const parts = relation.split(".")
         this.preloads.push(parts)
         const classes = [this.dClass]
@@ -238,7 +244,7 @@ class SqliteQuery extends Query {
             classes.push((new classes[i])[parts[i]].dataClass)
             foreignKeys.push(findForeignKey(classes[i],classes[i+1]))
         }
-        this.preloadChain.push({classes,foreignKeys})
+        this.preloadChain.push({classes,foreignKeys,filters})
 
         return this;
     }
@@ -249,12 +255,22 @@ class SqliteQuery extends Query {
      * @param dataClass {DataClass}
      * @param foreignKey {String}
      * @param idList {String[]}
+     * @param filter {SqliteQuery}
      * @returns {Promise<void>}
      */
-    async runPreloadQuery(db,dataClass,foreignKey,idList){
+    async runPreloadQuery(db,dataClass,foreignKey,idList,filter){
         const tableName = dataClassToName(dataClass)
-        const queryTemplate = `SELECT * FROM ${tableName} WHERE ${foreignKey} IN (${idList.map((_,i) =>( "?") ).join(",")})`
-        return await db.runQuery(ACTION_TYPES.SELECT,queryTemplate,idList)
+        let filtersTemplate = ''
+        if(filter){
+            filtersTemplate += filter.filters.join(" and ")
+            filtersTemplate += " and "
+        }
+
+        const startFrom = filter ? filter.values.length + 1 : 1
+
+        const queryTemplate = `SELECT * FROM ${tableName} WHERE  ${filtersTemplate}  ${foreignKey} IN (${idList.map((_,i) =>( "?") ).join(",")}) `
+        console.log(queryTemplate)
+        return await db.runQuery(ACTION_TYPES.SELECT,queryTemplate,[...(filter ? filter.filterValues : []),...idList])
     }
 
     /**
@@ -328,9 +344,12 @@ class SqliteQuery extends Query {
 
         const preloadData = []
         for(let i = 0 ; i < this.preloadChain.length;i++){
-            const {classes,foreignKeys} = this.preloadChain[i]
+            const {classes,foreignKeys,filters} = this.preloadChain[i]
+
             const currentPreloadData = []
             for(let j = 0 ; j < foreignKeys.length; j++){
+                // console.log(this.preloads[i][j])
+                const filter = filters[this.preloads[i][j]]
                 if(currentIDLIST.length === 0){
                     break;
                 }
@@ -338,7 +357,7 @@ class SqliteQuery extends Query {
                 const foreignKey = foreignKeys[j]
                 const dataClass = classes[j + 1]
                 try{
-                    const data = await this.runPreloadQuery(db,dataClass,foreignKey,currentIDLIST)
+                    const data = await this.runPreloadQuery(db,dataClass,foreignKey,currentIDLIST,filter)
 
                     const currentMap = new Map()
                     data.forEach(result => {

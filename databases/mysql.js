@@ -8,6 +8,7 @@ const { ModelWithIdNotFound, InternalServerError } = require("../actions")
 const { DATABASE_TYPES } = require(".")
 const {dataClassToName} = require("../utils/dataclassToName");
 const {isValueValid} = require("../utils/valueCheckings");
+const {Databases} = require("./index");
 
 /**
  * Turns the database callback function into a promise
@@ -158,7 +159,9 @@ class MySqlDatabase extends Database{
                     resolve("Database connected")
                 }
             })
-         }) 
+         })
+
+        Databases.connections[DATABASE_TYPES.MYSQL] = this;
     }
 
     async onConnectViaURL(url){

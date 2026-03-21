@@ -1,7 +1,7 @@
 const {DataClass} = require("../../dataclasses/base")
 const {createField, types, PostgresDatabase} = require("../../databases/postgresql")
 const {belongsTo, hasMany, hasOne} = require("../../databases/relations")
-const {PostgresqlQuery, ACTION_TYPES} = require("../../query/postgresqlQuery")
+const {PostgresqlQuery, ACTION_TYPES, LikePatterns} = require("../../query/postgresqlQuery")
 const {User} = require("../../docs/code/dataclass/dataclass_1");
 
 
@@ -41,11 +41,15 @@ async  function runner(){
     )
     await db.createTables(UserDataClass,MessageDataClass,MessageMetaDataClass)
     const query = new PostgresqlQuery(UserDataClass)
-
+    const messageQuery  = new PostgresqlQuery(MessageDataClass)
+    messageQuery.startFiltering().equals("text","Fifth message")
+    messageQuery.endFiltering()
     query.setActionType(ACTION_TYPES.SELECT)
     query.setSelectingFields("*")
     query.setTableName(UserDataClass)
-    query.preload("messages.meta")
+    query.preload("messages.meta",{
+        messages:messageQuery
+    })
     const result = await query.execute(db)
     console.log(JSON.stringify(result))
 }

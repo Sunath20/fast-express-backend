@@ -7,6 +7,9 @@ const {createMongoDBField} = require("../utils");
 const { DATABASE_TYPES } = require(".");
 const {deleteManyFromCollection} = require("../actions/deleteActions");
 const {ACTION_TYPES} = require("../query/mongodbQuery")
+const {DataClass} = require("../index");
+const {isValueValid} = require("../utils/valueCheckings");
+const {Databases} = require("./index");
 
 // Data classes models will be saved here
 const savedClasses = {}
@@ -49,6 +52,7 @@ class MongoDBDatabase extends Database {
      */
     async connect(url){
         await mongoose.connect(url)
+        Databases.connections[DATABASE_TYPES.MYSQL] = this
     }
 
 
@@ -151,6 +155,26 @@ class MongoDBDatabase extends Database {
             return output;
         }
 
+    }
+
+
+    async migrate(dataClass){
+        const instance = new dataClass()
+        const model = dataClassToModel(dataClass)
+        const fields = DataClass.getOwnPropertyNames(instance)
+
+        for(const field of fields){
+            const fieldInfo = instance[field]
+            if(!isValueValid(fieldInfo.defaultValue)) continue // skip if no default
+
+            await model.updateMany(
+                { [field]: { $exists: false } },
+                { $set: { [field]: fieldInfo.defaultValue } }
+            )
+            console.log(`MIGRATED: Added ${field} to existing documents`)
+        }
+
+        return true
     }
 
 }

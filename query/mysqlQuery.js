@@ -224,7 +224,7 @@ class MySQLQuery extends Query {
 
     preloads = []
     preloadChain = []
-    preload(relation){
+    preload(relation,filters){
         const parts = relation.split(".")
         this.preloads.push(parts)
         const classes = [this.dClass]
@@ -233,7 +233,7 @@ class MySQLQuery extends Query {
             classes.push((new classes[i])[parts[i]].dataClass)
             foreignKeys.push(findForeignKey(classes[i],classes[i+1]))
         }
-        this.preloadChain.push({classes,foreignKeys})
+        this.preloadChain.push({classes,foreignKeys,filters})
 
         return this;
     }
@@ -244,12 +244,15 @@ class MySQLQuery extends Query {
      * @param dataClass {DataClass}
      * @param foreignKey {String}
      * @param idList {String[]}
+     * @param filter {MySQLQuery}
      * @returns {Promise<void>}
      */
-    async runPreloadQuery(db,dataClass,foreignKey,idList){
+    async runPreloadQuery(db,dataClass,foreignKey,idList,filter){
         const tableName = dataClassToName(dataClass)
-        const queryTemplate = `SELECT * FROM ${tableName} WHERE ${foreignKey} IN (${idList.map((_,i) =>( "?") ).join(",")})`
-        return await db.runQuery(queryTemplate,idList)
+
+        const filterQuery = (filter && filter.filters.length > 0 ) ? filter.filters.join(" and ") + " and " : ""
+        const queryTemplate = `SELECT * FROM ${tableName} WHERE ${filterQuery} ${foreignKey} IN (${idList.map((_,i) =>( "?") ).join(",")})`
+        return await db.runQuery(queryTemplate,[...(filter ? filter.values :  []),...idList])
     }
 
     /**
@@ -323,9 +326,10 @@ class MySQLQuery extends Query {
 
         const preloadData = []
         for(let i = 0 ; i < this.preloadChain.length;i++){
-            const {classes,foreignKeys} = this.preloadChain[i]
+            const {classes,foreignKeys,filters} = this.preloadChain[i]
             const currentPreloadData = []
             for(let j = 0 ; j < foreignKeys.length; j++){
+                const filter = filters[this.preloads[i][j]]
                 if(currentIDLIST.length === 0){
                     break;
                 }
@@ -333,7 +337,7 @@ class MySQLQuery extends Query {
                 const foreignKey = foreignKeys[j]
                 const dataClass = classes[j + 1]
                 try{
-                    const data = await this.runPreloadQuery(db,dataClass,foreignKey,currentIDLIST)
+                    const data = await this.runPreloadQuery(db,dataClass,foreignKey,currentIDLIST,filter)
 
                     const currentMap = new Map()
                     data.forEach(result => {

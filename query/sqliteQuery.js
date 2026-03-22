@@ -2,7 +2,7 @@ const {Query} = require("./Query")
 
 const uuid = require("uuid")
 const {dataClassToName} = require("../utils/dataclassToName");
-const {RELATION_TYPES} = require("../databases/relations");
+const {RELATION_TYPES, manyToMany} = require("../databases/relations");
 const {DataClass} = require("../dataclasses/base");
 const {getManyToManyInfo} = require("../utils/manyToMany");
 
@@ -268,7 +268,7 @@ class SqliteQuery extends Query {
             const relationClass = parentClass
             const {columnOne,columnTwo,tableName} = getManyToManyInfo(dataClass,parentClass)
             const relationTableName = dataClassToName(relationClass)
-            const template = `SELECT * FROM ${dataClassToName(dataClass)} INNER JOIN ${tableName} ON ${tableName}.${columnOne} = ${dataClassToName(dataClass)}._id WHERE ${tableName}.${columnTwo} IN (${idList.map((e,i) => '?')})`
+            const template = `SELECT ${dataClassToName(dataClass)}.*,${tableName}.${columnTwo} FROM ${dataClassToName(dataClass)} INNER JOIN ${tableName} ON ${tableName}.${columnOne} = ${dataClassToName(dataClass)}._id WHERE ${tableName}.${columnTwo} IN (${idList.map((e,i) => '?')})`
             const data =  await db.runQuery(ACTION_TYPES.SELECT,template,idList)
             console.log("Getting many to many ",template,data)
             return data
@@ -311,6 +311,8 @@ class SqliteQuery extends Query {
                 const foreignKey = foreignKeys[j]
 
                 let setDirectly = column.relation === RELATION_TYPES.HAS_ONE
+                let manyToMany = column.relation === RELATION_TYPES.MANY_TO_MANY
+                console.log(column, " this is what we are dealing with")
 
                 for(const key of currentMap.keys()){
 
@@ -320,11 +322,16 @@ class SqliteQuery extends Query {
                     data.forEach(dataPoint => {
 
                         const relationalID = dataPoint[foreignKey]
+                        if(manyToMany){
+                            delete dataPoint[foreignKey]
+                        }
                         let upwardData = previousMap.get(relationalID)
                         upwardData = Array.isArray(upwardData) ? upwardData : [upwardData]
 
                         upwardData.forEach(upwardDataPoint => {
                             if(!upwardData){return}
+
+
                             const upwardDataField = this.preloads[i][j]
                             if(setDirectly){
                                 upwardDataPoint[upwardDataField] = dataPoint
@@ -431,12 +438,17 @@ class SqliteQuery extends Query {
             const settingField = this.preloads[i][0]
             const instance = new this.dClass()
             const isDirectly = instance[settingField].relation === RELATION_TYPES.HAS_ONE
+            const manyToMany = instance[settingField].relation === RELATION_TYPES.MANY_TO_MANY
             if(!preloads)continue;
             for(const key of  preloads.keys()){
                 const item = preloads.get(key)
+
                 if(Array.isArray(item)){
                     item.forEach( i => {
                         const upperIndex = i[foreignKey]
+                        if(manyToMany){
+                            delete i[foreignKey]
+                        }
                         const resultItem = resultMap.get(upperIndex)
                         if(isDirectly){
                             resultItem[settingField] = i
@@ -449,7 +461,7 @@ class SqliteQuery extends Query {
                         }
                     })
                 }else{
-                    console.log(item,foreignKey)
+
                     const upperIndex = item[foreignKey]
                     const resultItem = resultMap.get(upperIndex)
                     if(!resultItem)continue;

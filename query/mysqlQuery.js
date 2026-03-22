@@ -288,6 +288,7 @@ class MySQLQuery extends Query {
                 const foreignKey = foreignKeys[j]
 
                 let setDirectly = column.relation === RELATION_TYPES.HAS_ONE
+                let manyToMany = column.relation === RELATION_TYPES.MANY_TO_MANY
 
                 for(const key of currentMap.keys()){
 
@@ -297,6 +298,9 @@ class MySQLQuery extends Query {
                     data.forEach(dataPoint => {
 
                         const relationalID = dataPoint[foreignKey]
+                        if(manyToMany){
+                            delete dataPoint[foreignKey]
+                        }
                         let upwardData = previousMap.get(relationalID)
                         upwardData = Array.isArray(upwardData) ? upwardData : [upwardData]
 
@@ -408,12 +412,16 @@ class MySQLQuery extends Query {
             const settingField = this.preloads[i][0]
             const instance = new this.dClass()
             const isDirectly = instance[settingField].relation === RELATION_TYPES.HAS_ONE
+            const manyToMany = instance[settingField].relation === RELATION_TYPES.MANY_TO_MANY
             if(!preloads)continue;
             for(const key of  preloads.keys()){
                 const item = preloads.get(key)
                 if(Array.isArray(item)){
                     item.forEach( i => {
                         const upperIndex = i[foreignKey]
+                        if(manyToMany){
+                            delete i[foreignKey]
+                        }
                         const resultItem = resultMap.get(upperIndex)
                         if(isDirectly){
                             resultItem[settingField] = i

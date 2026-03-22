@@ -3,6 +3,7 @@ const uuid = require("uuid")
 const {DataClass} = require("../dataclasses/base");
 const {dataClassToName} = require("../utils/dataclassToName");
 const {RELATION_TYPES} = require("../databases/relations");
+const {getManyToManyInfo} = require("../utils/manyToMany");
 
 const ACTION_TYPES = {
     SELECT:"SELECT",
@@ -241,7 +242,7 @@ class PostgresqlQuery extends Query {
     preloads = []
     preloadChain = []
 
-    preload(relation,filters){
+    preload(relation,filters={}){
         const parts = relation.split(".")
         this.preloads.push(parts)
         const classes = [this.dClass]
@@ -264,12 +265,22 @@ class PostgresqlQuery extends Query {
      * @param filter {PostgresqlQuery}
      * @returns {Promise<void>}
      */
-    async runPreloadQuery(db,dataClass,foreignKey,idList,filter){
+    async runPreloadQuery(db,dataClass,foreignKey,idList,filter,relationColumn,parentClass){
+        const mapper = buildFieldMapper(dataClass)
+        if(relationColumn.relation === RELATION_TYPES.MANY_TO_MANY){
+            const relationClass = parentClass
+            const {columnOne,columnTwo,tableName} = getManyToManyInfo(dataClass,parentClass)
+            const relationTableName = dataClassToName(relationClass)
+            const template = `SELECT * FROM ${dataClassToName(dataClass)} INNER JOIN ${tableName} ON ${tableName}.${columnOne} = ${dataClassToName(dataClass)}._id WHERE ${tableName}.${columnTwo} IN (${idList.map((e,i) => `$${i+1}`)})`
+            const data =  await db.runQuery(template.toLowerCase(),idList)
+            return data.map(e => remapFields(e,mapper))
+        }
         const tableName = dataClassToName(dataClass)
         const filterQuery = (filter && filter.filters.length > 0 ) ? filter.filters.join(" and ").toLowerCase() + " and " : ""
         const startFrom = filter ? filter.values.length +1 : 1
         const queryTemplate = `SELECT * FROM ${tableName} WHERE ${filterQuery} ${foreignKey} IN (${idList.map((_,i) =>( "$"+(i+startFrom)) ).join(",")})`
-        return await db.runQuery(queryTemplate,[...(filter ? filter.values : [] ),...idList])
+        const data =  await db.runQuery(queryTemplate,[...(filter ? filter.values : [] ),...idList])
+        return data.map(e => remapFields(e,mapper))
     }
 
     /**
@@ -278,7 +289,7 @@ class PostgresqlQuery extends Query {
      * @param preloadedData Object[[]]
      * @returns {Promise<void>}
      */
-     attachDepthItems(preloadedData){
+    attachDepthItems(preloadedData){
         for(let i = 0 ; i < this.preloadChain.length ; i++){
             const {classes,foreignKeys} = this.preloadChain[i]
 
@@ -297,24 +308,38 @@ class PostgresqlQuery extends Query {
 
                 for(const key of currentMap.keys()){
 
-                    const data = currentMap.get(key)
-                    const relationalID = data[foreignKey.toLowerCase()]
-                    const upwardData = previousMap.get(relationalID)
+                    let data = currentMap.get(key);
+                    data = Array.isArray(data) ? data : [data]
 
-                    if(!upwardData){continue}
-                    const upwardDataField = this.preloads[i][j]
-                    if(setDirectly){
+                    data.forEach(dataPoint => {
 
-                        upwardData[upwardDataField] = data
-                        previousMap.set(relationalID,upwardData);
-                    }else{
-                        if(!upwardData[upwardDataField]){
-                            upwardData[upwardDataField] = []
-                            previousMap.set(relationalID,upwardData)
-                        }else{
-                            upwardData[upwardDataField].push(data)
-                        }
-                    }
+                        const relationalID = dataPoint[foreignKey]
+                        let upwardData = previousMap.get(relationalID)
+                        upwardData = Array.isArray(upwardData) ? upwardData : [upwardData]
+
+                        upwardData.forEach(upwardDataPoint => {
+                            if(!upwardDataPoint){return}
+                            const upwardDataField = this.preloads[i][j]
+                            if(setDirectly){
+                                upwardDataPoint[upwardDataField] = dataPoint
+                                // previousMap.set(relationalID,upwardData);
+                            }else{
+                                if(!upwardDataPoint[upwardDataField]){
+                                    upwardDataPoint[upwardDataField] = [dataPoint]
+                                }else{
+                                    upwardDataPoint[upwardDataField].push(dataPoint)
+                                }
+                            }
+
+                        })
+
+                        previousMap.set(relationalID,upwardData)
+
+                    })
+
+
+
+
                 }
             }
 
@@ -322,22 +347,33 @@ class PostgresqlQuery extends Query {
             preloadedData[i] = preloadedData[i][0]
         }
 
-     }
+    }
 
+    /**
+     *
+     * @param db {}
+     * @returns {Promise<any[]>}
+     */
     async execute(db){
+        console.log(this.preloadChain)
         const instance = new this.dClass()
         const {query, values} = this.build()
+        const mapper = buildFieldMapper(this.dClass)
 
-        const results = await db.runQuery(query, values)
+        let results = await db.runQuery(query, values)
+        results = results.map(e => remapFields(e, mapper))
+
         const resultMap = new Map()
         results.forEach(result => {
             resultMap.set(result['_id'],result)
         })
-        let currentIDLIST = results.map(result => result['_id'])
+        const idLIST  = results.map(result => result['_id'])
+        let currentIDLIST = idLIST
 
         const preloadData = []
         for(let i = 0 ; i < this.preloadChain.length;i++){
             const {classes,foreignKeys,filters} = this.preloadChain[i]
+
             const currentPreloadData = []
             for(let j = 0 ; j < foreignKeys.length; j++){
                 const filter = filters[this.preloads[i][j]]
@@ -346,16 +382,33 @@ class PostgresqlQuery extends Query {
                 }
 
                 const foreignKey = foreignKeys[j]
+                const parentClass = classes[j]
                 const dataClass = classes[j + 1]
+                const parentClassInstance = new parentClass()
+                const relationColumn  = parentClassInstance[this.preloads[i][j]]
+                const isManyToMany = relationColumn.relation === RELATION_TYPES.MANY_TO_MANY
                 try{
-                    const data = await this.runPreloadQuery(db,dataClass,foreignKey,currentIDLIST,filter)
-
+                    console.log("Gonna run the query base on",foreignKey, " for ",dataClassToName(dataClass))
+                    const data = await this.runPreloadQuery(db,dataClass,foreignKey,currentIDLIST,filter,relationColumn,parentClass)
+                    // console.log("Got the output data as ",data)
                     const currentMap = new Map()
-                    data.forEach(result => {
-                        currentMap.set(result['_id'],result)
+
+                    let index = 0
+                    data.forEach((result) => {
+                        if(!isManyToMany){
+                            currentMap.set(result['_id'],result)
+                            return;
+                        }
+                        if(!currentMap.has(result['_id'])){
+                            currentMap.set(result['_id'],[result])
+                        }else{
+                            currentMap.get(result['_id']).push(result)
+                        }
                     })
+                    console.log("Here is the map we got ",currentMap)
                     currentPreloadData.push(currentMap)
                     currentIDLIST = data.map(e => e['_id'])
+                    console.log(currentIDLIST)
                 }catch(error){
                     console.log(error)
                     throw new Error("Could not Preload data")
@@ -364,39 +417,58 @@ class PostgresqlQuery extends Query {
 
             }
             preloadData.push(currentPreloadData)
+            currentIDLIST = idLIST
         }
 
         this.attachDepthItems(preloadData)
-
         for(let i = 0 ; i < preloadData.length ; i++){
 
             const preloads = preloadData[i]
             const {foreignKeys}= this.preloadChain[i]
-            const foreignKey = foreignKeys[i]
+            console.log("This is the current foreign key ",foreignKeys)
+            const foreignKey = foreignKeys[0]
             const settingField = this.preloads[i][0]
             const instance = new this.dClass()
             const isDirectly = instance[settingField].relation === RELATION_TYPES.HAS_ONE
-
+            if(!preloads)continue;
             for(const key of  preloads.keys()){
                 const item = preloads.get(key)
-
-                const upperIndex = item[foreignKey.toLowerCase()]
-                const resultItem = resultMap.get(upperIndex)
-                if(isDirectly){
-                    resultItem[settingField] = item
+                if(Array.isArray(item)){
+                    item.forEach( i => {
+                        if(!i)return;
+                        const upperIndex = i[foreignKey]
+                        const resultItem = resultMap.get(upperIndex)
+                        if(isDirectly){
+                            resultItem[settingField] = i
+                        }else{
+                            if(!resultItem[settingField]){
+                                resultItem[settingField] = []
+                                resultMap.set(upperIndex, resultItem)
+                            }
+                            resultItem[settingField].push(i)
+                        }
+                    })
                 }else{
-                    if(!resultItem[settingField]){
-                        resultItem[settingField] = []
-                        resultMap.set(upperIndex, resultItem)
+                    console.log(item,foreignKey)
+                    const upperIndex = item[foreignKey]
+                    const resultItem = resultMap.get(upperIndex)
+                    if(!resultItem)continue;
+                    if(isDirectly){
+                        resultItem[settingField] = item
+                    }else{
+                        if(!resultItem[settingField]){
+                            resultItem[settingField] = []
+                            resultMap.set(upperIndex, resultItem)
+                        }
+                        resultItem[settingField].push(item)
                     }
-                    resultItem[settingField].push(item)
                 }
+
             }
         }
 
         return  Array.from(resultMap.values())
     }
-
 
     innerJoin(joinTable,fieldNameOne,fieldNameTwo)    {
         this.queryBase += `Inner join ${joinTable} ON ${fieldNameOne}=${fieldNameTwo}`
@@ -417,13 +489,42 @@ class PostgresqlQuery extends Query {
 }
 
 function findForeignKey(parentClass,childClass){
-        const instance  = new childClass()
-        const {columns} = DataClass.getColumnsAndRelationFields(childClass)
-        const col = columns.find(e => instance[e].isRelation && instance[e].parentDataClass === parentClass)
-    if(!col){
-        throw new Error("Unable to find the relation between parent and child ",parentClass,childClass)
+    const instance  = new childClass()
+    const {columns,manyToManyFields} = DataClass.getColumnsAndRelationFields(childClass)
+    if(manyToManyFields.length > 0 ){
+        const parentInstance = new parentClass()
+        const parentAttributes = DataClass.getColumnsAndRelationFields(parentClass)
+        const relationalColumn =  parentAttributes.manyToManyFields.find(e => parentInstance[e].isRelation && parentInstance[e].dataClass === childClass)
+        if(relationalColumn){
+            return dataClassToName(parentClass) + "_id"
+        }
     }
-    return col;
+
+    return columns.find(e => instance[e].isRelation && instance[e].parentDataClass === parentClass)
+}
+
+
+function buildFieldMapper(dataClass){
+    const instance = new dataClass()
+    const fields = DataClass.getOwnPropertyNames(instance)
+    const DEFAULT_FIELD_MAPPER = {
+        'createdat': 'createdAt',
+        'updatedat': 'updatedAt'
+    }
+    const mapper = {}
+    fields.forEach(field => {
+        mapper[field.toLowerCase()] = field
+    })
+    return {...DEFAULT_FIELD_MAPPER,...mapper}
+}
+
+function remapFields(row, mapper){
+    const remapped = {}
+    Object.keys(row).forEach(key => {
+        const originalKey = mapper[key] || key
+        remapped[originalKey] = row[key]
+    })
+    return remapped
 }
 
 module.exports = {PostgresqlQuery,LikePatterns,ACTION_TYPES,toPostgresqlDateTime,ORDER_DIRECTIONS}

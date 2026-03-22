@@ -7,17 +7,20 @@ const {hasMany,belongsTo, manyToMany, ON_DELETE} = require("../../databases/rela
 const {createPassword} = createPasswordHashing("d2nd2bhvdg2be2,, fmf 2fhvehv w ,3f3n,mf32dnm3ndm3  3 f")
 
 
-const { createField, types } = require("../../databases/sqlite3");
+const { createField, types } = require("../../databases/mysql");
 const { isValueValid } = require("../../utils/valueCheckings");
 const { dataClassToName } = require("../../utils/dataclassToName");
 const {User} = require("../../docs/code/dataclass/dataclass_1");
+const {MySqlDatabase} = require("../../databases/mysql");
+const {MySQLQuery} = require("../../query/mysqlQuery");
+const {ACTION_TYPES} = require("../../query/postgresqlQuery");
 
 class UserDataClass extends DataClass {
     username = createField(types.TEXT, false, false, [
         is_required("Username is required"),
         minLength(8, "Username must contain 8 letters")
     ])
-    password = createField(types.REAL, false, false, [], null, createPassword,{defaultValue:"password"})
+    password = createField(types.TEXT, false, false, [], null, createPassword,{defaultValue:"password"})
 
     messages = hasMany(Message)
     rooms = manyToMany(Room)
@@ -32,7 +35,7 @@ class Message  extends DataClass {
 
     text = createField(types.TEXT, false, false, [])
 
-    userID = belongsTo(UserDataClass,"_id",false,ON_DELETE.CASCADE,types.TEXT)
+    userID = belongsTo(UserDataClass,"_id",false,ON_DELETE.CASCADE,types.VARCHAR,{max:250})
 }
 
 class Room extends DataClass {
@@ -46,11 +49,17 @@ class Room extends DataClass {
 
 
 async function runner() {
-    const db = new SQLiteDatabase("test_relations.db")
-    await db.connect()
+    const db = new MySqlDatabase()
+    await db.onConnectViaURL(
+        "mysql://avnadmin:AVNS_oxGZy6jUMNqkPxouKSn@mysql-157c41e-sunath2007-b922.a.aivencloud.com:26067/test-many?ssl-mode=REQUIRED"
+    )
     await db.createTables(UserDataClass,Message,Room)
-
-    // console.log(await db.databaseFunctionToPromise('all', `PRAGMA foreign_key_list(message)`))
+    const query  = new MySQLQuery(UserDataClass)
+    query.setActionType(ACTION_TYPES.SELECT)
+    query.setSelectingFields("*")
+    query.setTableName(UserDataClass)
+    const response = await query.preload("rooms").execute(db)
+    console.log(JSON.stringify(response))
 //     console.log(await db.getTableInfo(UserDataClass))
 //     console.log(await db.getTableInfo(Message))
 //     console.log(await db.getTableInfo(Room))

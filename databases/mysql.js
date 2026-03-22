@@ -111,8 +111,11 @@ function createVARCHARField(unique,notNull=true,validators=[],before_validation=
  * @returns 
  */
 function createFieldQuery(name,data){
-   console.log(data)
-    return `${name} ${data.sqlType == "VARCHAR" ? "VARCHAR("+data.metaData['max']+")" : data.sqlType} ${data.unique ? "UNIQUE" : ""} ${data.notNull ? "NOT NULL" : ""} `
+
+        const sqlType = data.sqlType === "VARCHAR"
+            ? `VARCHAR(${data.metaData?.max || 250})` // default 250 for FK fields
+            : data.sqlType
+        return `${name} ${sqlType} ${data.unique ? "UNIQUE" : ""} ${data.notNull ? "NOT NULL" : ""}`
 }
 
 const cachedDataClassNames = {}

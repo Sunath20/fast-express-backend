@@ -4,6 +4,7 @@ const uuid = require("uuid")
 const {dataClassToName} = require("../utils/dataclassToName");
 const {RELATION_TYPES} = require("../databases/relations");
 const {DataClass} = require("../dataclasses/base");
+const {getManyToManyInfo} = require("../utils/manyToMany");
 
 const ACTION_TYPES = {
     SELECT:"SELECT",
@@ -244,6 +245,7 @@ class SqliteQuery extends Query {
             classes.push((new classes[i])[parts[i]].dataClass)
             foreignKeys.push(findForeignKey(classes[i],classes[i+1]))
         }
+
         this.preloadChain.push({classes,foreignKeys,filters})
 
         return this;
@@ -256,9 +258,21 @@ class SqliteQuery extends Query {
      * @param foreignKey {String}
      * @param idList {String[]}
      * @param filter {SqliteQuery}
+     * @param relationColumn {Object}
      * @returns {Promise<void>}
      */
-    async runPreloadQuery(db,dataClass,foreignKey,idList,filter){
+    async runPreloadQuery(db,dataClass,foreignKey,idList,filter,relationColumn,parentClass){
+
+        if(relationColumn.relation === RELATION_TYPES.MANY_TO_MANY){
+
+            const relationClass = parentClass
+            const {columnOne,columnTwo,tableName} = getManyToManyInfo(dataClass,parentClass)
+            const relationTableName = dataClassToName(relationClass)
+            const template = `SELECT * FROM ${dataClassToName(dataClass)} INNER JOIN ${tableName} ON ${tableName}.${columnOne} = ${dataClassToName(dataClass)}._id WHERE ${tableName}.${columnTwo} IN (${idList.map((e,i) => '?')})`
+            const data =  await db.runQuery(ACTION_TYPES.SELECT,template,idList)
+            console.log("Getting many to many ",template,data)
+            return data
+        }
         const tableName = dataClassToName(dataClass)
         let filtersTemplate = ''
         if(filter){
@@ -269,8 +283,10 @@ class SqliteQuery extends Query {
         const startFrom = filter ? filter.values.length + 1 : 1
 
         const queryTemplate = `SELECT * FROM ${tableName} WHERE  ${filtersTemplate}  ${foreignKey} IN (${idList.map((_,i) =>( "?") ).join(",")}) `
-        console.log(queryTemplate)
-        return await db.runQuery(ACTION_TYPES.SELECT,queryTemplate,[...(filter ? filter.filterValues : []),...idList])
+        console.log("running the other way  ",queryTemplate,idList)
+       const data =  await db.runQuery(ACTION_TYPES.SELECT,queryTemplate,[...(filter ? filter.filterValues : []),...idList])
+        console.log(data)
+        return data
     }
 
     /**
@@ -298,24 +314,38 @@ class SqliteQuery extends Query {
 
                 for(const key of currentMap.keys()){
 
-                    const data = currentMap.get(key)
-                    const relationalID = data[foreignKey]
-                    const upwardData = previousMap.get(relationalID)
+                    let data = currentMap.get(key);
+                    data = Array.isArray(data) ? data : [data]
 
-                    if(!upwardData){continue}
-                    const upwardDataField = this.preloads[i][j]
-                    if(setDirectly){
+                    data.forEach(dataPoint => {
 
-                        upwardData[upwardDataField] = data
-                        previousMap.set(relationalID,upwardData);
-                    }else{
-                        if(!upwardData[upwardDataField]){
-                            upwardData[upwardDataField] = []
-                            previousMap.set(relationalID,upwardData)
-                        }else{
-                            upwardData[upwardDataField].push(data)
-                        }
-                    }
+                        const relationalID = dataPoint[foreignKey]
+                        let upwardData = previousMap.get(relationalID)
+                        upwardData = Array.isArray(upwardData) ? upwardData : [upwardData]
+
+                        upwardData.forEach(upwardDataPoint => {
+                            if(!upwardData){return}
+                            const upwardDataField = this.preloads[i][j]
+                            if(setDirectly){
+                                upwardDataPoint[upwardDataField] = dataPoint
+                                // previousMap.set(relationalID,upwardData);
+                            }else{
+                                if(!upwardDataPoint[upwardDataField]){
+                                    upwardDataPoint[upwardDataField] = [dataPoint]
+                                }else{
+                                    upwardDataPoint[upwardDataField].push(dataPoint)
+                                }
+                            }
+
+                        })
+
+                        previousMap.set(relationalID,upwardData)
+
+                    })
+
+
+
+
                 }
             }
 
@@ -331,6 +361,7 @@ class SqliteQuery extends Query {
      * @returns {Promise<any[]>}
      */
     async execute(db){
+        console.log(this.preloadChain)
         const instance = new this.dClass()
         const {query, values} = this.build()
 
@@ -340,7 +371,8 @@ class SqliteQuery extends Query {
         results.forEach(result => {
             resultMap.set(result['_id'],result)
         })
-        let currentIDLIST = results.map(result => result['_id'])
+        const idLIST  = results.map(result => result['_id'])
+        let currentIDLIST = idLIST
 
         const preloadData = []
         for(let i = 0 ; i < this.preloadChain.length;i++){
@@ -348,20 +380,33 @@ class SqliteQuery extends Query {
 
             const currentPreloadData = []
             for(let j = 0 ; j < foreignKeys.length; j++){
-                // console.log(this.preloads[i][j])
                 const filter = filters[this.preloads[i][j]]
                 if(currentIDLIST.length === 0){
                     break;
                 }
 
                 const foreignKey = foreignKeys[j]
+                const parentClass = classes[j]
                 const dataClass = classes[j + 1]
+                const parentClassInstance = new parentClass()
+                const relationColumn  = parentClassInstance[this.preloads[i][j]]
+                const isManyToMany = relationColumn.relation === RELATION_TYPES.MANY_TO_MANY
                 try{
-                    const data = await this.runPreloadQuery(db,dataClass,foreignKey,currentIDLIST,filter)
+                    const data = await this.runPreloadQuery(db,dataClass,foreignKey,currentIDLIST,filter,relationColumn,parentClass)
 
                     const currentMap = new Map()
-                    data.forEach(result => {
-                        currentMap.set(result['_id'],result)
+
+                    let index = 0
+                    data.forEach((result) => {
+                        if(!isManyToMany){
+                            currentMap.set(result['_id'],result)
+                            return;
+                        }
+                        if(!currentMap.has(result['_id'])){
+                            currentMap.set(result['_id'],[result])
+                        }else{
+                            currentMap.get(result['_id']).push(result)
+                        }
                     })
                     currentPreloadData.push(currentMap)
                     currentIDLIST = data.map(e => e['_id'])
@@ -373,33 +418,52 @@ class SqliteQuery extends Query {
 
             }
             preloadData.push(currentPreloadData)
+            currentIDLIST = idLIST
         }
-
+        console.log(preloadData)
         this.attachDepthItems(preloadData)
-
         for(let i = 0 ; i < preloadData.length ; i++){
-
+            console.log(this.preloadChain[i])
             const preloads = preloadData[i]
             const {foreignKeys}= this.preloadChain[i]
-            const foreignKey = foreignKeys[i]
+            console.log("This is the current foreign key ",foreignKeys)
+            const foreignKey = foreignKeys[0]
             const settingField = this.preloads[i][0]
             const instance = new this.dClass()
             const isDirectly = instance[settingField].relation === RELATION_TYPES.HAS_ONE
             if(!preloads)continue;
             for(const key of  preloads.keys()){
                 const item = preloads.get(key)
-
-                const upperIndex = item[foreignKey]
-                const resultItem = resultMap.get(upperIndex)
-                if(isDirectly){
-                    resultItem[settingField] = item
+                if(Array.isArray(item)){
+                    item.forEach( i => {
+                        const upperIndex = i[foreignKey]
+                        const resultItem = resultMap.get(upperIndex)
+                        if(isDirectly){
+                            resultItem[settingField] = i
+                        }else{
+                            if(!resultItem[settingField]){
+                                resultItem[settingField] = []
+                                resultMap.set(upperIndex, resultItem)
+                            }
+                            resultItem[settingField].push(i)
+                        }
+                    })
                 }else{
-                    if(!resultItem[settingField]){
-                        resultItem[settingField] = []
-                        resultMap.set(upperIndex, resultItem)
+                    console.log(item,foreignKey)
+                    const upperIndex = item[foreignKey]
+                    const resultItem = resultMap.get(upperIndex)
+                    if(!resultItem)continue;
+                    if(isDirectly){
+                        resultItem[settingField] = item
+                    }else{
+                        if(!resultItem[settingField]){
+                            resultItem[settingField] = []
+                            resultMap.set(upperIndex, resultItem)
+                        }
+                        resultItem[settingField].push(item)
                     }
-                    resultItem[settingField].push(item)
                 }
+
             }
         }
 
@@ -410,12 +474,17 @@ class SqliteQuery extends Query {
 
 function findForeignKey(parentClass,childClass){
     const instance  = new childClass()
-    const {columns} = DataClass.getColumnsAndRelationFields(childClass)
-    const col = columns.find(e => instance[e].isRelation && instance[e].parentDataClass === parentClass)
-    if(!col){
-        throw new Error("Unable to find the relation between parent and child ",parentClass,childClass)
+    const {columns,manyToManyFields} = DataClass.getColumnsAndRelationFields(childClass)
+    if(manyToManyFields.length > 0 ){
+        const parentInstance = new parentClass()
+        const parentAttributes = DataClass.getColumnsAndRelationFields(parentClass)
+        const relationalColumn =  parentAttributes.manyToManyFields.find(e => parentInstance[e].isRelation && parentInstance[e].dataClass === childClass)
+        if(relationalColumn){
+            return dataClassToName(parentClass) + "_id"
+        }
     }
-    return col;
+
+    return columns.find(e => instance[e].isRelation && instance[e].parentDataClass === parentClass)
 }
 
 module.exports = {SqliteQuery,LikePatterns,ACTION_TYPES,toSQLLiteDateTime,ORDER_DIRECTIONS}

@@ -435,6 +435,17 @@ FOREIGN KEY (${secondColumnName}) REFERENCES ${classTwoName}(_id) ON DELETE CASC
         return true;
     }
 
+
+    async addRelation(classOne, classTwo, idOne, idTwo){
+        const nameOne = dataClassToName(classOne)
+        const nameTwo = dataClassToName(classTwo)
+        const tableName = [nameOne, nameTwo].sort().join("_")
+        const columnOne = `${nameOne}_id`
+        const columnTwo = `${nameTwo}_id`
+        const template = `INSERT INTO ${tableName} (${columnOne}, ${columnTwo}) VALUES ($1, $2)`
+        return this.runQuery(template, [idOne, idTwo])
+    }
+
 }
 
 /**
